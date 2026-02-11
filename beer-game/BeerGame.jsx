@@ -43,7 +43,7 @@ const CONFIG = {
 };
 
 // --- API CONFIGURATION ---
-const apiKey = ""; // Runtime environment provides key
+const apiKey = window.prompt("Enter your Gemini API Key to enable AI:"); // Runtime environment provides key
 
 // --- HELPER FUNCTIONS ---
 

@@ -35,6 +35,40 @@ const generateSupplierState = (role, initialInv) => ({
   lastProductionOrder: 0
 });
 
+// --- UI Components (Defined Outside App to prevent re-render focus loss) ---
+
+const OrderInput = ({ label, type, value, onChange, icon: Icon, color, disabled }) => (
+  <div className="flex flex-col space-y-1">
+    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+      <Icon size={14} className={color} /> {label}
+    </label>
+    <input
+      type="number"
+      min="0"
+      value={value === 0 ? '' : value}
+      onChange={(e) => onChange(type, parseInt(e.target.value) || 0)}
+      className="w-full border-2 border-gray-200 rounded-lg p-2 text-lg font-bold focus:border-[#DA291C] focus:ring-[#DA291C] focus:outline-none transition-all disabled:bg-gray-100 disabled:text-gray-400"
+      placeholder="0"
+      disabled={disabled}
+    />
+  </div>
+);
+
+const StatCard = ({ title, value, subValue, icon: Icon, alert }) => (
+  <div className={`bg-white p-4 rounded-xl shadow-sm border-l-4 ${alert ? 'border-red-500 bg-red-50' : 'border-[#FFC72C]'} relative overflow-hidden`}>
+    <div className="flex justify-between items-start z-10 relative">
+      <div>
+        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">{title}</h3>
+        <div className="text-2xl font-black text-gray-800 mt-1">{value.toLocaleString()}</div>
+        {subValue && <div className="text-xs text-red-600 font-bold mt-1">{subValue}</div>}
+      </div>
+      <div className={`p-2 rounded-full ${alert ? 'bg-red-100 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
+        <Icon size={20} />
+      </div>
+    </div>
+  </div>
+);
+
 const App = () => {
   // --- Game State ---
   const [week, setWeek] = useState(1);
@@ -48,10 +82,8 @@ const App = () => {
   const [totalCost, setTotalCost] = useState(0);
 
   // AI Opponents (Upstream)
-  // Aryzta supplies Buns. Tyson supplies Beef & Fish (simplified: Tyson manages Beef mainly for logic, Fish auto-scaled or treated as Beef equivalent for simplicity in AI prompt, or we ask for both. Let's ask for distinct orders if possible, but to save API calls, maybe 1 call per supplier).
-  // *Correction*: To keep it manageable, Tyson will reason about "Patties" generally or we make 2 calls. Let's do 2 sequential phases for AI to be clear.
   const [aryztaState, setAryztaState] = useState(generateSupplierState("Aryzta (Buns)", 3000));
-  const [tysonState, setTysonState] = useState(generateSupplierState("Tyson (Protein)", 3000)); // Managing Beef/Fish aggregate for simplicity in this demo or distinct? Let's do distinct internal logic but 1 AI "brain" for Tyson.
+  const [tysonState, setTysonState] = useState(generateSupplierState("Tyson (Protein)", 3000));
   
   // Simulation Data
   const [history, setHistory] = useState([{ week: 0, inventory: 3000, backlog: 0, demand: 0 }]);
@@ -166,7 +198,6 @@ const App = () => {
     setTurnPhase('AI_ARYZTA');
     
     // Execute Aryzta Logic
-    // Aryzta manages Buns
     const bunsOrderFromPlayer = playerOrder.buns;
     
     // Artificial delay for UI "Thinking"
@@ -185,8 +216,7 @@ const App = () => {
     // 2. Switch to Tyson
     setTurnPhase('AI_TYSON');
     
-    // Execute Tyson Logic (Combined Beef+Fish for simplicity of API call, usually we'd split)
-    // Let's sum them for the "AI Brain" but split proportionally for the logic
+    // Execute Tyson Logic (Combined Beef+Fish for simplicity of API call)
     const totalMeatOrder = playerOrder.beef + playerOrder.fish;
     
     await new Promise(r => setTimeout(r, 1000));
@@ -243,27 +273,20 @@ const App = () => {
     const aryztaResult = processSupplier(aryztaState, aryztaProduction, playerOrder.buns);
     setAryztaState(aryztaResult.newState);
 
-    // Process Tyson (Beef & Fish) - Simplified: Tyson AI decides total meat. We split proportionally if shortage?
-    // For simplicity, we'll assume Tyson's production covers both pools equally, or we treat Tyson as having one "Meat" inventory that converts to specific items.
-    // Let's keep it simple: Tyson has one inventory for "Units of Meat". 
+    // Process Tyson (Beef & Fish)
     const tysonResult = processSupplier(tysonState, tysonProduction, playerOrder.beef + playerOrder.fish);
     setTysonState(tysonResult.newState);
     
     // BUT we need to know specifically how many Beef vs Fish were shipped.
-    // If Tyson has shortage, we ratio it.
     let shippedBeef = playerOrder.beef;
     let shippedFish = playerOrder.fish;
     const tysonDemandTotal = playerOrder.beef + playerOrder.fish + tysonState.backlog; // Approx
     
     // Service Level Ratio
     const serviceLevel = tysonDemandTotal > 0 ? tysonResult.shippedAmount / tysonDemandTotal : 1;
-    // This is an approximation since backlog tracking per item type in a combined supplier is complex. 
-    // We will apply the ratio to the *current* order.
     shippedBeef = Math.floor(playerOrder.beef * serviceLevel);
     shippedFish = Math.floor(playerOrder.fish * serviceLevel);
     
-    // Note: This logic simplifies Tyson's backlog handling. In a full sim, we'd track backlog per SKU.
-
     // --- Step 2: Midstream (Player) Logic ---
 
     // Create Shipment Object for Player (Arrives in 2 weeks)
@@ -372,40 +395,6 @@ const App = () => {
     if (nextWeek === MAX_WEEKS) setGameOver(true);
     setTurnPhase('PLAYER');
   };
-
-  // --- UI Components ---
-
-  const OrderInput = ({ label, type, value, onChange, icon: Icon, color }) => (
-    <div className="flex flex-col space-y-1">
-      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-        <Icon size={14} className={color} /> {label}
-      </label>
-      <input
-        type="number"
-        min="0"
-        value={value === 0 ? '' : value}
-        onChange={(e) => onChange(type, parseInt(e.target.value) || 0)}
-        className="w-full border-2 border-gray-200 rounded-lg p-2 text-lg font-bold focus:border-[#DA291C] focus:ring-[#DA291C] focus:outline-none transition-all disabled:bg-gray-100 disabled:text-gray-400"
-        placeholder="0"
-        disabled={gameOver || turnPhase !== 'PLAYER'}
-      />
-    </div>
-  );
-
-  const StatCard = ({ title, value, subValue, icon: Icon, alert }) => (
-    <div className={`bg-white p-4 rounded-xl shadow-sm border-l-4 ${alert ? 'border-red-500 bg-red-50' : 'border-[#FFC72C]'} relative overflow-hidden`}>
-      <div className="flex justify-between items-start z-10 relative">
-        <div>
-          <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">{title}</h3>
-          <div className="text-2xl font-black text-gray-800 mt-1">{value.toLocaleString()}</div>
-          {subValue && <div className="text-xs text-red-600 font-bold mt-1">{subValue}</div>}
-        </div>
-        <div className={`p-2 rounded-full ${alert ? 'bg-red-100 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
-          <Icon size={20} />
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div className="min-h-screen font-sans text-gray-800 bg-gray-50 flex flex-col relative">
@@ -565,6 +554,7 @@ const App = () => {
                       onChange={(k, v) => setPlayerOrder({...playerOrder, [k]: v})}
                       icon={Factory}
                       color="text-yellow-600"
+                      disabled={gameOver || turnPhase !== 'PLAYER'}
                    />
                    <OrderInput 
                       label="Order Beef (Tyson)" 
@@ -573,6 +563,7 @@ const App = () => {
                       onChange={(k, v) => setPlayerOrder({...playerOrder, [k]: v})}
                       icon={Factory}
                       color="text-red-600"
+                      disabled={gameOver || turnPhase !== 'PLAYER'}
                    />
                    <OrderInput 
                       label="Order Fish (Tyson)" 
@@ -581,6 +572,7 @@ const App = () => {
                       onChange={(k, v) => setPlayerOrder({...playerOrder, [k]: v})}
                       icon={Factory}
                       color="text-blue-600"
+                      disabled={gameOver || turnPhase !== 'PLAYER'}
                    />
                 </div>
              </div>
